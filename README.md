@@ -1,4 +1,6 @@
-<img src="branding/logo.svg" alt="MimirDLP logo" align="left" height="96"/>
+<div align="center">
+
+<img src="branding/logo.svg" alt="MimirDLP logo" height="120"/>
 
 # MimirDLP
 
@@ -10,7 +12,7 @@
 
 A portable GUI around [yt-dlp](https://github.com/yt-dlp/yt-dlp) that doesn't touch your system.
 
-<br clear="left"/>
+</div>
 
 In Norse mythology, Mimir guards a well of wisdom so deep that Odin gave up an eye just to drink from it. MimirDLP is a smaller trade: paste a link, and it goes and fetches the knowledge (and the video) for you, no sacrifice required.
 
