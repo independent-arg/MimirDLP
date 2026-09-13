@@ -1,0 +1,33 @@
+[package]
+name = "mimirdlp"
+version = "0.1.0"
+description = "A portable GUI around yt-dlp: Mimir's well of downloads."
+edition = "2024"
+# Tracks the current stable Rust, not an old floor. The application is
+# handed out as a prebuilt binary, and anyone compiling it from source
+# installs a toolchain with rustup, so holding back the whole dependency
+# tree to suit an old distro package would buy nothing. Bump it whenever
+# the toolchain in use moves on.
+rust-version = "1.98"
+license = "MIT"
+repository = "https://github.com/independent-arg/MimirDLP"
+
+[dependencies]
+iced = { version = "0.14.0", features = ["image"] }
+lzma-rust2 = { version = "0.20.1", default-features = false, features = ["std", "xz", "optimization"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.11.0"
+tar = { version = "0.4.46", default-features = false }
+ureq = "3.4.1"
+zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+
+[dev-dependencies]
+lzma-rust2 = { version = "0.20.1", default-features = false, features = ["std", "xz", "encoder"] }
+
+[profile.release]
+# One binary people download by hand, so a slower build is a fair trade for
+# a much smaller file.
+lto = true
+codegen-units = 1
+strip = true

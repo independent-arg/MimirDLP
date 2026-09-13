@@ -1,0 +1,59 @@
+name: CI
+
+# Runs on every push and pull request.
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The project tracks current stable, so the runner's toolchain is
+      # brought up to date rather than assumed. Clippy is not preinstalled.
+      - name: Toolchain
+        run: |
+          rustup update stable
+          rustup default stable
+          rustup component add clippy rustfmt
+          rustc --version
+
+      - name: Formatting
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      # Includes tests/engine_scenarios.rs, which rebuilds the argv of a
+      # fixed set of scenarios and compares it with what each expects.
+      - name: Tests
+        run: cargo test --all-targets --locked
+
+  # The Windows build can only be checked here: there is no Windows machine
+  # in the loop. The unix only tests are cfg'd out and skipped.
+  rust-windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Toolchain
+        run: |
+          rustup update stable
+          rustup default stable
+          rustup component add clippy
+          rustc --version
+
+      - name: Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Tests
+        run: cargo test --all-targets --locked

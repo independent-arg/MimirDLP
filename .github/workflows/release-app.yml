@@ -1,0 +1,151 @@
+name: Release app
+
+# Publishes the Linux and Windows binaries of the application whenever an
+# "app-vX.Y.Z" tag is pushed.
+on:
+  push:
+    tags:
+      - "app-v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to release (e.g. app-v0.1.0)"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-app-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  # Same gate as CI. A broken binary is worse than a failed tag.
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Toolchain
+        run: |
+          rustup update stable
+          rustup default stable
+          rustup component add clippy rustfmt
+          rustc --version
+
+      - name: Formatting
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Tests
+        run: cargo test --all-targets --locked
+
+  release:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Resolve tag
+        id: vars
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#app-v}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify Cargo.toml version matches the tag
+        run: |
+          TAG_VERSION="${{ steps.vars.outputs.version }}"
+          CARGO_VERSION=$(grep -m1 '^version = "' Cargo.toml | cut -d'"' -f2)
+          if [[ "$TAG_VERSION" != "$CARGO_VERSION" ]]; then
+            echo "::error::Tag ($TAG_VERSION) does not match version in Cargo.toml ($CARGO_VERSION)"
+            exit 1
+          fi
+
+      - name: Toolchain
+        run: |
+          rustup update stable
+          rustup default stable
+          rustc --version
+
+      # The binary needs the glibc of the runner, so it targets current
+      # distributions only (built on ubuntu-latest, so glibc 2.39+).
+      - name: Build
+        run: cargo build --release --locked
+
+      - name: Package
+        id: package
+        run: |
+          VERSION="${{ steps.vars.outputs.version }}"
+          NAME="mimirdlp-$VERSION-linux-x86_64"
+          mkdir -p "dist/$NAME"
+          cp target/release/mimirdlp "dist/$NAME/"
+          tar -czf "dist/$NAME.tar.gz" -C dist "$NAME"
+          (cd dist && sha256sum "$NAME.tar.gz" > "$NAME.tar.gz.sha256")
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          ls -lh dist
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          tag_name: ${{ steps.vars.outputs.tag }}
+          name: ${{ steps.vars.outputs.tag }}
+          generate_release_notes: true
+          files: |
+            dist/${{ steps.package.outputs.name }}.tar.gz
+            dist/${{ steps.package.outputs.name }}.tar.gz.sha256
+
+  # Runs after the Linux job so the release already exists and both assets
+  # end up on the same one.
+  windows:
+    needs: release
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Resolve tag
+        id: vars
+        shell: bash
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#app-v}" >> "$GITHUB_OUTPUT"
+
+      - name: Toolchain
+        run: |
+          rustup update stable
+          rustup default stable
+          rustc --version
+
+      - name: Build
+        run: cargo build --release --locked
+
+      - name: Package
+        id: package
+        shell: pwsh
+        run: |
+          $version = "${{ steps.vars.outputs.version }}"
+          $name = "mimirdlp-$version-windows-x86_64"
+          New-Item -ItemType Directory -Path "dist/$name" | Out-Null
+          Copy-Item target/release/mimirdlp.exe "dist/$name/"
+          Compress-Archive -Path "dist/$name" -DestinationPath "dist/$name.zip"
+          $hash = (Get-FileHash "dist/$name.zip" -Algorithm SHA256).Hash.ToLower()
+          "$hash  $name.zip" | Out-File -Encoding ascii "dist/$name.zip.sha256"
+          "name=$name" >> $env:GITHUB_OUTPUT
+          Get-ChildItem dist
+
+      - name: Add to the release
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          tag_name: ${{ steps.vars.outputs.tag }}
+          files: |
+            dist/${{ steps.package.outputs.name }}.zip
+            dist/${{ steps.package.outputs.name }}.zip.sha256
